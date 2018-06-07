@@ -1,7 +1,8 @@
 'use strict';
 
 angular.module('mentio')
-    .factory('mentioUtil', function ($window, $location, $anchorScroll, $timeout) {
+    .factory('mentioUtil', ['$window', '$location', '$anchorScroll', '$timeout',
+        function ($window, $location, $anchorScroll, $timeout) {
 
         // public
         function popUnderMention (ctx, triggerCharSet, selectionEl, requireLeadingSpace) {
@@ -21,14 +22,16 @@ angular.module('mentio')
                 selectionEl.css({
                     top: coordinates.top + 'px',
                     left: coordinates.left + 'px',
-                    position: 'absolute',
+                    position: coordinates.position,
                     zIndex: 10000,
                     display: 'block'
                 });
 
-                $timeout(function(){
-                    scrollIntoView(ctx, selectionEl);
-                },0);
+                if (coordinates.position === 'absolute') {
+                    $timeout(function(){
+                        scrollIntoView(ctx, selectionEl);
+                    },0);
+                }
             } else {
                 selectionEl.css({
                     display: 'none'
@@ -174,14 +177,15 @@ angular.module('mentio')
         }
 
         // public
-        function replaceTriggerText (ctx, targetElement, path, offset, triggerCharSet, 
+        function replaceTriggerText (ctx, targetElement, path, offset, triggerCharSet,
                 text, requireLeadingSpace, hasTrailingSpace) {
             resetSelection(ctx, targetElement, path, offset);
 
             var mentionInfo = getTriggerInfo(ctx, triggerCharSet, requireLeadingSpace, true, hasTrailingSpace);
 
             if (mentionInfo !== undefined) {
-                if (selectedElementIsTextAreaOrInput()) {
+                // https://github.com/jeff-collins/ment.io/pull/110
+                if (selectedElementIsTextAreaOrInput(ctx)) {
                     var myField = getDocument(ctx).activeElement;
                     text = text + ' ';
                     var startPos = mentionInfo.mentionPosition;
@@ -297,7 +301,7 @@ angular.module('mentio')
         // public
         function getTriggerInfo (ctx, triggerCharSet, requireLeadingSpace, menuAlreadyActive, hasTrailingSpace) {
             /*jshint maxcomplexity:11 */
-            // yes this function needs refactoring 
+            // yes this function needs refactoring
             var selected, path, offset;
             if (selectedElementIsTextAreaOrInput(ctx)) {
                 selected = getDocument(ctx).activeElement;
@@ -316,25 +320,26 @@ angular.module('mentio')
                 var mostRecentTriggerCharPos = -1;
                 var triggerChar;
                 triggerCharSet.forEach(function(c) {
-                    var idx = effectiveRange.lastIndexOf(c);
+                    var idx;
+                    if (requireLeadingSpace) {
+                        idx = Math.max(
+                            effectiveRange.lastIndexOf(' ' + c),
+                            effectiveRange.lastIndexOf('\n' + c),
+                            effectiveRange.lastIndexOf('\xA0' + c));
+                        if (idx < 0) {
+                            idx = effectiveRange && effectiveRange.charAt(0) === c ? 0 : -1;
+                        } else {
+                            idx++;
+                        }
+                    } else {
+                        idx = effectiveRange.lastIndexOf(c);
+                    }
                     if (idx > mostRecentTriggerCharPos) {
                         mostRecentTriggerCharPos = idx;
                         triggerChar = c;
                     }
                 });
-                if (mostRecentTriggerCharPos >= 0 &&
-                        (
-                            mostRecentTriggerCharPos === 0 ||
-                            !requireLeadingSpace ||
-                            /[\xA0\s]/g.test
-                            (
-                                effectiveRange.substring(
-                                    mostRecentTriggerCharPos - 1,
-                                    mostRecentTriggerCharPos)
-                            )
-                        )
-                    )
-                {
+                if (mostRecentTriggerCharPos >= 0) {
                     var currentTriggerSnippet = effectiveRange.substring(mostRecentTriggerCharPos + 1,
                         effectiveRange.length);
 
@@ -343,6 +348,7 @@ angular.module('mentio')
                     var leadingSpace = currentTriggerSnippet.length > 0 &&
                         (
                             firstSnippetChar === ' ' ||
+                            firstSnippetChar === '\n' ||
                             firstSnippetChar === '\xA0'
                         );
                     if (hasTrailingSpace) {
@@ -432,6 +438,7 @@ angular.module('mentio')
         }
 
         function localToGlobalCoordinates(ctx, element, coordinates) {
+            coordinates.position = 'absolute';
             var obj = element;
             var iframe = ctx ? ctx.iframe : null;
             while(obj) {
@@ -442,23 +449,27 @@ angular.module('mentio')
                     obj = iframe;
                     iframe = null;
                 }
-            }            
+            }
             obj = element;
             iframe = ctx ? ctx.iframe : null;
-            while(obj !== getDocument().body) {
+            while(obj && obj !== getDocument().body) {
                 if (obj.scrollTop && obj.scrollTop > 0) {
                     coordinates.top -= obj.scrollTop;
                 }
                 if (obj.scrollLeft && obj.scrollLeft > 0) {
                     coordinates.left -= obj.scrollLeft;
                 }
+                if (coordinates.position !== 'fixed' && obj.nodeType === Node.ELEMENT_NODE) {
+                    var style = window.getComputedStyle ? getComputedStyle(obj) : obj.currentStyle;
+                    if (style.position === 'fixed') coordinates.position = 'fixed';
+                }
                 obj = obj.parentNode;
                 if (!obj && iframe) {
                     obj = iframe;
                     iframe = null;
                 }
-            }            
-         }
+            }
+        }
 
         function getTextAreaOrInputUnderlinePosition (ctx, element, position) {
             var properties = [
@@ -567,4 +578,4 @@ angular.module('mentio')
             resetSelection: resetSelection,
             scrollIntoView: scrollIntoView
         };
-    });
+    }]);

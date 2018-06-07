@@ -11,6 +11,7 @@ angular.module('mentio', [])
                 select: '&mentioSelect',
                 items: '=mentioItems',
                 typedTerm: '=mentioTypedTerm',
+                id: '@',
                 altId: '=mentioId',
                 iframeElement: '=mentioIframeElement',
                 requireLeadingSpace: '=mentioRequireLeadingSpace',
@@ -18,7 +19,7 @@ angular.module('mentio', [])
                 trimTerm: '=mentioTrimTerm',
                 ngModel: '='
             },
-            controller: function($scope, $timeout, $attrs) {
+            controller: ['$scope', '$timeout', '$attrs', function($scope, $timeout, $attrs) {
 
                 $scope.query = function (triggerChar, triggerText) {
                     var remoteScope = $scope.triggerCharMap[triggerChar];
@@ -176,12 +177,12 @@ angular.module('mentio', [])
                 $scope.$on(
                     'menuCreated', function (event, data) {
                         if (
-                            $attrs.id !== undefined ||
+                            $scope.id !== undefined ||
                             $attrs.mentioId !== undefined
                         )
                         {
                             if (
-                                $attrs.id === data.targetElement ||
+                                $scope.id === data.targetElement ||
                                 (
                                     $attrs.mentioId !== undefined &&
                                     $scope.altId === data.targetElement
@@ -194,55 +195,61 @@ angular.module('mentio', [])
                     }
                 );
 
-                $document.on(
-                    'click', function () {
+                function clickElement() {
                         if ($scope.isActive()) {
                             $scope.$apply(function () {
                                 $scope.hideAll();
                             });
                         }
-                    }
-                );
+                }
+                
 
-                $document.on(
-                    'keydown keypress paste', function (event) {
+                function keypressElement (event) {
                         var activeMenuScope = $scope.getActiveMenuScope();
-                        if (activeMenuScope) {
-                            if (event.which === 9 || event.which === 13) {
+                        if (!activeMenuScope) return;
+                        switch (event.which) {
+                            case 9: case 13:
                                 event.preventDefault();
                                 activeMenuScope.selectActive();
-                            }
+                                break;
 
-                            if (event.which === 27) {
+                            case 27:
                                 event.preventDefault();
                                 activeMenuScope.$apply(function () {
                                     activeMenuScope.hideMenu();
                                 });
-                            }
+                                break;
 
-                            if (event.which === 40) {
+                            case 40:
                                 event.preventDefault();
                                 activeMenuScope.$apply(function () {
                                     activeMenuScope.activateNextItem();
                                 });
                                 activeMenuScope.adjustScroll(1);
-                            }
+                                break;
 
-                            if (event.which === 38) {
+                            case 38:
                                 event.preventDefault();
                                 activeMenuScope.$apply(function () {
                                     activeMenuScope.activatePreviousItem();
                                 });
                                 activeMenuScope.adjustScroll(-1);
-                            }
+                                break;
 
-                            if (event.which === 37 || event.which === 39) {
+                            case 37: case 39:
                                 event.preventDefault();
-                             }
+                                break;
                         }
-                    }
-                );
-            },
+                }
+                // fixing memory leaks
+                // https://github.com/jeff-collins/ment.io/pull/166
+              $document.on('click', clickElement);
+              $document.on('keydown keypress', keypressElement);
+              $scope.$on('$destroy', function() {
+                    $document.off('click', clickElement);
+                    $document.off('keydown keypress', keypressElement);
+              });
+            }],
             link: function (scope, element, attrs) {
                 scope.triggerCharMap = {};
 
@@ -288,49 +295,49 @@ angular.module('mentio', [])
                         event.stopImmediatePropagation();
                     }
                     var activeMenuScope = scope.getActiveMenuScope();
-                    if (activeMenuScope) {
-                        if (event.which === 9 || event.which === 13) {
+                    if (!activeMenuScope) return;
+                    switch (event.which) {
+                        case 9: case 13:
                             stopEvent(event);
                             activeMenuScope.selectActive();
                             return false;
-                        }
 
-                        if (event.which === 27) {
+                        case 27:
                             stopEvent(event);
                             activeMenuScope.$apply(function () {
                                 activeMenuScope.hideMenu();
                             });
                             return false;
-                        }
 
-                        if (event.which === 40) {
+                        case 40:
                             stopEvent(event);
                             activeMenuScope.$apply(function () {
                                 activeMenuScope.activateNextItem();
                             });
                             activeMenuScope.adjustScroll(1);
                             return false;
-                        }
 
-                        if (event.which === 38) {
+                        case 38:
                             stopEvent(event);
                             activeMenuScope.$apply(function () {
                                 activeMenuScope.activatePreviousItem();
                             });
                             activeMenuScope.adjustScroll(-1);
                             return false;
-                        }
 
-                        if (event.which === 37 || event.which === 39) {
+                        case 37: case 39:
                             stopEvent(event);
                             return false;
-                        }
                     }
                 }
 
                 scope.$watch(
-                    'iframeElement', function(newValue) {
-                        if (newValue) {
+                    'iframeElement', function(newValue, oldValue) {
+                        //https://github.com/jeff-collins/ment.io/pull/127
+                        if ((!newValue || newValue === '' || newValue === oldValue) && !scope.isActive()) {
+                            // ignore while setting up
+                            return;
+                        }
                             var iframeDocument = newValue.contentWindow.document;
                             iframeDocument.addEventListener('click',
                                 function () {
@@ -349,16 +356,16 @@ angular.module('mentio', [])
                                 iframeDocument.removeEventListener ( 'keydown', keyHandler );
                             });
                         }
-                    }
                 );
 
                 scope.$watch(
                     'ngModel',
-                    function (newValue) {
-                        /*jshint maxcomplexity:14 */
+                    function (newValue, oldValue) {
+                        /*jshint maxcomplexity:15 */
                         /*jshint maxstatements:39 */
                         // yes this function needs refactoring
-                        if ((!newValue || newValue === '') && !scope.isActive()) {
+                        // https://github.com/jeff-collins/ment.io/pull/127
+                        if ((!newValue || newValue === '' || newValue === oldValue) && !scope.isActive()) {
                             // ignore while setting up
                             return;
                         }
@@ -468,7 +475,7 @@ angular.module('mentio', [])
             templateUrl: function(tElement, tAttrs) {
                 return tAttrs.mentioTemplateUrl !== undefined ? tAttrs.mentioTemplateUrl : 'mentio-menu.tpl.html';
             },
-            controller: function ($scope) {
+            controller: ['$scope', function ($scope) {
                 $scope.visible = false;
 
                 // callable both with controller (menuItem) and without controller (local)
@@ -534,7 +541,7 @@ angular.module('mentio', [])
                     $scope.parentMentio = scope;
                     $scope.targetElement = scope.targetElement;
                 };
-            },
+            }],
 
             link: function (scope, element) {
                 element[0].parentNode.removeChild(element[0]);
@@ -561,22 +568,52 @@ angular.module('mentio', [])
                         });
                 }
 
-                angular.element($window).bind(
-                    'resize', function () {
+                function resize() {
                         if (scope.isVisible()) {
                             var triggerCharSet = [];
                             triggerCharSet.push(scope.triggerChar);
                             mentioUtil.popUnderMention(scope.parentMentio.context(),
                                 triggerCharSet, element, scope.requireLeadingSpace);
                         }
+                }
+
+                angular.element($window).on('resize', resize);
+
+                scope.parentMentio.$on('$destroy', function () {
+                    angular.element($window).off('resize', resize);
+                    element.remove();
+                });
+
+                scope.hideMenu = function () {
+                    scope.visible = false;
+                    element.css('display', 'none');
+                };
+
+                scope.adjustScroll = function (direction) {
+                    var menuEl = element[0];
+                    var menuItemsList = menuEl.querySelector('ul');
+                    var menuItem = (menuEl.querySelector('[mentio-menu-item].active') ||
+                        menuEl.querySelector('[data-mentio-menu-item].active'));
+
+                    if (scope.isFirstItemActive()) {
+                        return menuItemsList.scrollTop = 0;
+                    } else if(scope.isLastItemActive()) {
+                        return menuItemsList.scrollTop = menuItemsList.scrollHeight;
                     }
-                );
+
+                    if (direction === 1) {
+                        menuItemsList.scrollTop += menuItem.offsetHeight;
+                    } else {
+                        menuItemsList.scrollTop -= menuItem.offsetHeight;
+                    }
+                };
 
                 scope.$watch('items', function (items) {
                     if (items && items.length > 0) {
                         scope.activate(items[0]);
                         if (!scope.visible && scope.requestVisiblePendingSearch) {
                             scope.visible = true;
+                            element.css('display', 'block');
                             scope.requestVisiblePendingSearch = false;
                         }
                     } else {
@@ -593,34 +630,6 @@ angular.module('mentio', [])
                             triggerCharSet, element, scope.requireLeadingSpace);
                     }
                 });
-
-                scope.parentMentio.$on('$destroy', function () {
-                    element.remove();
-                });
-
-                scope.hideMenu = function () {
-                    scope.visible = false;
-                    element.css('display', 'none');
-                };
-
-                scope.adjustScroll = function (direction) {
-                    var menuEl = element[0];
-                    var menuItemsList = menuEl.querySelector('ul');
-                    var menuItem = (menuEl.querySelector('[mentio-menu-item].active') || 
-                        menuEl.querySelector('[data-mentio-menu-item].active'));
-
-                    if (scope.isFirstItemActive()) {
-                        return menuItemsList.scrollTop = 0;
-                    } else if(scope.isLastItemActive()) {
-                        return menuItemsList.scrollTop = menuItemsList.scrollHeight;
-                    }
-
-                    if (direction === 1) {
-                        menuItemsList.scrollTop += menuItem.offsetHeight;
-                    } else {
-                        menuItemsList.scrollTop -= menuItem.offsetHeight;
-                    }
-                };
 
             }
         };
@@ -658,22 +667,26 @@ angular.module('mentio', [])
             }
         };
     })
-    .filter('unsafe', function($sce) {
+    .filter('unsafe', ["$sce", function($sce) {
         return function (val) {
             return $sce.trustAsHtml(val);
         };
-    })
+    }])
     .filter('mentioHighlight', function() {
         function escapeRegexp (queryToEscape) {
             return queryToEscape.replace(/([.?*+^$[\]\\(){}|-])/g, '\\$1');
         }
+        function escapeHtml (stringToEscape) {
+            return stringToEscape.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
 
         return function (matchItem, query, hightlightClass) {
+            matchItem = escapeHtml('' + matchItem);
             if (query) {
                 var replaceText = hightlightClass ?
                                  '<span class="' + hightlightClass + '">$&</span>' :
                                  '<strong>$&</strong>';
-                return ('' + matchItem).replace(new RegExp(escapeRegexp(query), 'gi'), replaceText);
+                return matchItem.replace(new RegExp(escapeRegexp(escapeHtml(query)), 'gi'), replaceText);
             } else {
                 return matchItem;
             }
